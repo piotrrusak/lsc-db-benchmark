@@ -1,3 +1,5 @@
+# LOCAL
+
 ```bash
 piotrrusak@fedora:~/Agh/lsc-db-benchmark/cockroach-v24.1.0.linux-amd64$ ./cockroach start --insecure \
   --store=node1 \
@@ -319,7 +321,7 @@ _elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(
 Error: pq: result is ambiguous: error=ba: Put [/Table/106/1/400/0], EndTxn(parallel commit) [/Table/106/1/400/0], [txn: 2cce471c] RPC error: grpc: error reading from server: read tcp 127.0.0.1:54952->127.0.0.1:26258: read: connection reset by peer [code 14/Unavailable] [exhausted] (last error: routing information detected to be stale: [NotLeaseHolderError] lease held by different store; r73: replica (n3,s3):2 not lease holder; current lease is repl=(n2,s2):3 seq=3 start=1777135826.439980668,0 epo=1 pro=1777135826.450045745,0)
 ```
 
-After killing node2 during the workload, throughput dropped from ~1350 ops/sec to 0 ops/sec for several seconds. The client observed an ambiguous result error caused by connection reset and leaseholder change. This shows that CockroachDB prioritizes consistency: instead of returning possibly incorrect results, it reports uncertainty and requires the client to retry.
+After killing node2 during the workload, throughput dropped from ~1350 ops/sec to 0 ops/sec for several seconds. This temporary unavailability is caused by Raft leader election and leaseholder transfer. The client observed an ambiguous result error caused by connection reset and leaseholder change. This shows that CockroachDB prioritizes consistency: instead of returning possibly incorrect results, it reports uncertainty and requires the client to retry.
 
 After that test I revived node2:
 
@@ -468,4 +470,202 @@ _elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(
 _elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
 ```
 
-As we can see, for a moment ops/sec dropped to 0, and than recovered to values like before error occoured.
+As we can see, ops/sec briefly dropped to 0 and then recovered to previous values.
+
+# AWS
+
+Configurating AWS required 3 EC2 instances and security group that enables inbound tcp on 26257.
+Each node was deployed on a separate EC2 instance within the same VPC to enable low-latency communication.
+
+![EC2 Instances](instances.png)
+
+![Security groups](security_group_configuration.png)
+
+![Instances in terminal](terminal_instances.png)
+
+Baseline:
+
+```bash
+[ec2-user@ip-172-31-34-240 cockroach-v24.1.0.linux-amd64]$ ./cockroach workload run bank 'postgresql://root@172.31.34.240:26257?sslmode=disable' --duration=5m
+I260426 14:59:28.344874 1 workload/cli/run.go:639  [-] 1  random seed: 9359561712330100429
+I260426 14:59:28.345126 1 workload/cli/run.go:431  [-] 2  creating load generator...
+I260426 14:59:28.780259 1 workload/cli/run.go:470  [-] 3  creating load generator... done (took 435.12857ms)
+_elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
+    1.0s        0          108.3          155.7     16.8     37.7    285.2    369.1 transfer
+    2.0s        0          138.4          147.3     18.9     71.3    117.4    125.8 transfer
+    3.0s        0            8.0          100.9    369.1    402.7    402.7    402.7 transfer
+    4.0s        0            7.6           77.1    385.9    486.5    486.5    486.5 transfer
+    5.0s        0            4.1           62.9   1073.7   1073.7   1073.7   1073.7 transfer
+    6.0s        0            4.0           53.1   1073.7   1140.9   1140.9   1140.9 transfer
+    7.0s        0            2.0           45.8   1006.6   1140.9   1140.9   1140.9 transfer
+    8.0s        0            2.0           40.4   1811.9   1811.9   1811.9   1811.9 transfer
+    9.0s        0            0.0           35.9      0.0      0.0      0.0      0.0 transfer
+   10.0s        0            2.0           32.5   2684.4   2818.6   2818.6   2818.6 transfer
+   11.0s        0            0.0           29.6      0.0      0.0      0.0      0.0 transfer
+   12.0s        0            0.0           27.1      0.0      0.0      0.0      0.0 transfer
+   13.0s        0            0.0           25.0      0.0      0.0      0.0      0.0 transfer
+   14.0s        0            0.0           23.2      0.0      0.0      0.0      0.0 transfer
+   15.0s        0            0.0           21.7      0.0      0.0      0.0      0.0 transfer
+   16.0s        0            1.0           20.4   8321.5   8321.5   8321.5   8321.5 transfer
+   17.0s        0            0.0           19.2      0.0      0.0      0.0      0.0 transfer
+   18.0s        0            0.0           18.1      0.0      0.0      0.0      0.0 transfer
+   19.0s        0            1.0           17.2  11811.2  11811.2  11811.2  11811.2 transfer
+   20.0s        0            0.0           16.4      0.0      0.0      0.0      0.0 transfer
+_elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
+```
+
+Recovery:
+
+```bash
+[ec2-user@ip-172-31-34-240 cockroach-v24.1.0.linux-amd64]$ ./cockroach workload run bank 'postgresql://root@172.31.34.240:26257?sslmode=disable' --duration=5m
+I260426 15:01:36.117335 1 workload/cli/run.go:639  [-] 1  random seed: 3532145109929266603
+I260426 15:01:36.446508 1 workload/cli/run.go:431  [-] 2  creating load generator...
+I260426 15:03:40.540083 1 workload/cli/run.go:470  [-] 3  creating load generator... done (took 2m4.103914139s)
+_elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
+   45.0s        0            0.0            0.0  45097.2  45097.2  45097.2  45097.2 transfer
+   46.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   47.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   48.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   49.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   50.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   51.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   52.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   53.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   54.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   55.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   56.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   57.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   58.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   59.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   60.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   61.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   62.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   63.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   64.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+_elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
+   65.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   66.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   67.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   68.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   69.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   70.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   71.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   72.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   73.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   74.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   75.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   76.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   77.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   78.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   79.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   80.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   81.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   82.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   83.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   84.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+_elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
+   85.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   86.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   87.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   88.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   89.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   90.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   91.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   92.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   93.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   94.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   95.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   96.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   97.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   98.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+   99.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  100.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  101.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  102.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  103.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  104.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+_elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
+  105.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  106.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  107.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  108.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  109.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  110.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  111.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  112.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  113.1s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  114.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  115.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  116.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  117.0s        0            0.0            0.0      0.0      0.0      0.0      0.0 transfer
+  118.0s        0            3.0            0.0 103079.2 103079.2 103079.2 103079.2 transfer
+  119.0s        0          149.0            1.3     13.1     22.0   1342.2  77309.4 transfer
+  120.0s        0          267.8            3.5     13.6     24.1     44.0     56.6 transfer
+  121.0s        0          260.2            5.6     14.2     28.3     39.8     50.3 transfer
+  122.0s        0          251.0            7.6     14.7     27.3     31.5     41.9 transfer
+  123.0s        0          289.8            9.9     13.6     19.9     31.5     41.9 transfer
+  124.0s        0          293.0           12.2     13.1     19.9     28.3     41.9 transfer
+_elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
+  125.0s        0          270.0           14.3     13.6     25.2     33.6     35.7 transfer
+  126.0s        0          265.0           16.3     14.2     25.2     56.6     65.0 transfer
+  127.0s        0          279.9           18.3     14.2     21.0     32.5     46.1 transfer
+  128.0s        0           95.0           18.9     14.7     37.7    536.9    536.9 transfer
+  129.0s        0            0.0           18.8      0.0      0.0      0.0      0.0 transfer
+  130.0s        0            0.0           18.7      0.0      0.0      0.0      0.0 transfer
+  131.0s        0            0.0           18.5      0.0      0.0      0.0      0.0 transfer
+  132.0s        0            0.0           18.4      0.0      0.0      0.0      0.0 transfer
+  133.0s        0            0.0           18.2      0.0      0.0      0.0      0.0 transfer
+  134.0s        0            0.0           18.1      0.0      0.0      0.0      0.0 transfer
+  135.0s        0            0.0           18.0      0.0      0.0      0.0      0.0 transfer
+  136.0s        0            0.0           17.8      0.0      0.0      0.0      0.0 transfer
+  137.0s        0            0.0           17.7      0.0      0.0      0.0      0.0 transfer
+  138.0s        0            0.0           17.6      0.0      0.0      0.0      0.0 transfer
+  139.0s        0            0.0           17.4      0.0      0.0      0.0      0.0 transfer
+  140.0s        0            0.0           17.3      0.0      0.0      0.0      0.0 transfer
+  141.0s        0            0.0           17.2      0.0      0.0      0.0      0.0 transfer
+  142.0s        0            0.0           17.1      0.0      0.0      0.0      0.0 transfer
+  143.0s        0           60.1           17.4     41.9  14495.5  15032.4  15032.4 transfer
+  144.0s        0          151.8           18.3     19.9     58.7     92.3    100.7 transfer
+_elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
+  145.0s        0          277.3           20.1     14.7     22.0     26.2     37.7 transfer
+  146.0s        0          285.0           21.9     13.6     21.0     30.4     50.3 transfer
+  147.0s        0          284.2           23.7     13.6     21.0     29.4     41.9 transfer
+  148.0s        0          294.9           25.5     13.1     21.0     27.3     39.8 transfer
+  149.0s        0          275.9           27.2     14.2     21.0     27.3     35.7 transfer
+  150.0s        0          276.9           28.9     13.6     23.1     32.5     46.1 transfer
+  151.0s        0          298.1           30.7     13.1     19.9     25.2     79.7 transfer
+  152.0s        0          282.9           32.3     14.2     21.0     29.4     32.5 transfer
+  153.0s        0          285.1           34.0     13.6     22.0     27.3     46.1 transfer
+  154.0s        0          296.9           35.7     13.1     22.0     25.2     41.9 transfer
+  155.0s        0          269.0           37.2     14.2     26.2     41.9     44.0 transfer
+  156.0s        0          277.0           38.7     14.2     22.0     29.4     44.0 transfer
+  157.0s        0          239.7           40.0     15.2     33.6     46.1     58.7 transfer
+  158.0s        0          255.2           41.4     15.2     25.2     41.9     60.8 transfer
+  159.0s        0          273.0           42.8     14.2     24.1     37.7     46.1 transfer
+  160.0s        0          251.7           44.1     15.2     26.2     33.6     41.9 transfer
+  161.0s        0          281.3           45.6     13.6     23.1     29.4     37.7 transfer
+  162.0s        0          124.7           46.1     27.3     75.5    109.1    113.2 transfer
+  163.0s        0          210.9           47.1     16.3     37.7     88.1     88.1 transfer
+  164.0s        0          238.4           48.3     15.7     30.4     46.1     58.7 transfer
+_elapsed___errors__ops/sec(inst)___ops/sec(cum)__p50(ms)__p95(ms)__p99(ms)_pMax(ms)
+```
+
+Failure & recovery can be easily seen
+
+After recovery test:
+
+```bash
+[ec2-user@ip-172-31-43-16 cockroach-v24.1.0.linux-amd64]$ ./cockroach node status --insecure --host=172.31.34.240:26257
+  id |       address       |     sql_address     |  build  |              started_at              |              updated_at              | locality | is_available | is_live
+-----+---------------------+---------------------+---------+--------------------------------------+--------------------------------------+----------+--------------+----------
+   1 | 172.31.34.240:26257 | 172.31.34.240:26257 | v24.1.0 | 2026-04-26 14:59:08.400235 +0000 UTC | 2026-04-26 15:10:02.472411 +0000 UTC |          | false        | false
+   2 | 172.31.43.16:26257  | 172.31.43.16:26257  | v24.1.0 | 2026-04-26 14:48:19.819595 +0000 UTC | 2026-04-26 15:10:01.926362 +0000 UTC |          | false        | false
+   3 | 172.31.44.11:26257  | 172.31.44.11:26257  | v24.1.0 | 2026-04-26 14:48:20.094994 +0000 UTC | 2026-04-26 15:05:36.868796 +0000 UTC |          | false        | false
+(3 rows)
+[ec2-user@ip-172-31-43-16 cockroach-v24.1.0.linux-amd64]$ 
+```
+
+The CockroachDB cluster was deployed on three AWS EC2 instances. A bank workload benchmark was executed against node1. During node failures, throughput temporarily dropped, sometimes to 0 ops/sec, and tail latency increased significantly. After quorum and leaseholders stabilized, the system resumed progress. CockroachDB preserved consistency by either completing transactions safely, returning ambiguous result errors, or stopping progress when quorum was unavailable.
+
+This demonstrates that CockroachDB ensures strong consistency even during node failures, 
+at the cost of temporary unavailability while the system reconfigures.
