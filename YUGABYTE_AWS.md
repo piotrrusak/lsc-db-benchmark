@@ -25,14 +25,10 @@ Create or modify a security group and add the following **inbound rules**:
 
 | Type | Protocol | Port range | Source | Purpose |
 |---|---|---|---|---|
-| Custom TCP | TCP | 5433 | Security group (self) | YSQL inter-node |
-| Custom TCP | TCP | 7000 | Security group (self) | YB-Master HTTP UI |
+| Custom TCP | TCP | 7000 | Security group (self) | YB-Master HTTP (join config fetch) |
 | Custom TCP | TCP | 7100 | Security group (self) | YB-Master RPC |
-| Custom TCP | TCP | 9000 | Security group (self) | YB-TServer HTTP UI |
 | Custom TCP | TCP | 9100 | Security group (self) | YB-TServer RPC |
-| Custom TCP | TCP | 15433 | Security group (self) | yugabyted UI |
 | Custom TCP | TCP | 5433 | Your IP | YSQL client access |
-| Custom TCP | TCP | 7000 | Your IP | Web UI access (optional) |
 | SSH | TCP | 22 | Your IP | SSH access |
 
 Apply this security group to all 3 instances.
@@ -238,8 +234,6 @@ Revive node 3:
 ```bash
 ./bin/ysqlsh -h 172.31.10.1 -c "SELECT host, port, node_type FROM yb_servers();"
 ```
-
-You can also view the YugabyteDB web UI at `http://<node1-public-ip>:7000` for a visual overview of cluster health, tablet leaders, and replication status.
 
 ## Teardown
 
