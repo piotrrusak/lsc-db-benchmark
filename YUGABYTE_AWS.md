@@ -123,8 +123,10 @@ Create the database and initialize the pgbench schema:
 
 ```bash
 ./bin/ysqlsh -h 172.31.10.1 -c "CREATE DATABASE bank;"
-pgbench -i -h 172.31.10.1 -p 5433 -U yugabyte -d bank -s 10
+pgbench -i -s 10 -h 172.31.10.1 -p 5433 -U yugabyte -d bank --init-steps=dtgpf
 ```
+
+The `--init-steps=dtgpf` flag controls the initialization sequence: drop existing tables (`d`), create tables (`t`), generate data server-side (`G`), add primary keys (`p`), and add foreign keys (`f`). This avoids re-running unnecessary steps if you need to reinitialize.
 
 Verify:
 
