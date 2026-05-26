@@ -16,7 +16,8 @@ sudo systemctl disable postgresql
 pgbench --version
 
 # Create the custom, strict Serializable transaction file
-cat << 'EOF' > ~/serializable_txn.sql
+
+```sql
 BEGIN;
 SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
 \set aid random(1, 100000 * :scale)
@@ -24,19 +25,7 @@ SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
 SELECT abalance FROM pgbench_accounts WHERE aid = :aid;
 UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;
 END;
-EOF
-
-
-# ------------------------------------------------------------------------------
-# PHASE 2: COCKROACHDB ENGINE INSTALLATION (Execute on ALL Nodes: 10.0.0.11, .12, .13)
-# ------------------------------------------------------------------------------
-# Fetch and extract the last unthrottled major version (v23.1.26)
-curl https://binaries.cockroachdb.com/cockroach-v23.1.26.linux-amd64.tgz | tar -xz
-
-# Link the executable binary globally into the system execution path
-sudo cp cockroach-v23.1.26.linux-amd64/cockroach /usr/local/bin/
-
-
+```
 # ------------------------------------------------------------------------------
 # PHASE 3: SECURE CLUSTER STARTUP SEQUENCE
 # ------------------------------------------------------------------------------
