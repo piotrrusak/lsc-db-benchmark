@@ -117,13 +117,13 @@ sudo dnf install -y postgresql15
 sudo apt-get install -y postgresql-client
 ```
 
-## Step 7 — Initialize the Bank Workload
+## Step 7 — Initialize the benckmark Workload
 
 Create the database and initialize the pgbench schema:
 
 ```bash
-./bin/ysqlsh -h 172.31.10.1 -c "CREATE DATABASE bank;"
-pgbench -i -s 10 -h 172.31.10.1 -p 5433 -U yugabyte -d bank --init-steps=dtgpf
+./bin/ysqlsh -h 172.31.10.1 -c "CREATE DATABASE benckmark;"
+pgbench -i -s 10 -h 172.31.10.1 -p 5433 -U yugabyte -d benckmark --init-steps=dtgpf
 ```
 
 The `--init-steps=dtgpf` flag controls the initialization sequence: drop existing tables (`d`), create tables (`t`), generate data server-side (`G`), add primary keys (`p`), and add foreign keys (`f`). This avoids re-running unnecessary steps if you need to reinitialize.
@@ -131,15 +131,15 @@ The `--init-steps=dtgpf` flag controls the initialization sequence: drop existin
 Verify:
 
 ```bash
-./bin/ysqlsh -h 172.31.10.1 -d bank -c "\dt"
+./bin/ysqlsh -h 172.31.10.1 -d benckmark -c "\dt"
 ```
 
 ## Step 8 — Baseline Benchmark (All 3 Nodes Healthy)
 
-Run a 5-minute TPC-B (bank transfer) benchmark:
+Run a 5-minute TPC-B (benckmark transfer) benchmark:
 
 ```bash
-pgbench -h 172.31.10.1 -p 5433 -U yugabyte -d bank \
+pgbench -h 172.31.10.1 -p 5433 -U yugabyte -d benckmark \
   -c 20 -j 4 -T 300 -P 1
 ```
 
@@ -168,7 +168,7 @@ Record the steady-state `tps` and `lat` numbers.
 Start a 5-minute benchmark on node 1:
 
 ```bash
-pgbench -h 172.31.10.1 -p 5433 -U yugabyte -d bank \
+pgbench -h 172.31.10.1 -p 5433 -U yugabyte -d benckmark \
   -c 20 -j 4 -T 300 -P 1
 ```
 
@@ -210,7 +210,7 @@ Verify all nodes are live:
 Confirm all 3 nodes are healthy, then start the benchmark again:
 
 ```bash
-pgbench -h 172.31.10.1 -p 5433 -U yugabyte -d bank \
+pgbench -h 172.31.10.1 -p 5433 -U yugabyte -d benckmark \
   -c 20 -j 4 -T 300 -P 1
 ```
 
